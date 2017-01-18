@@ -13,9 +13,10 @@ class ViewController: UIViewController,UICollectionViewDelegate,UICollectionView
     @IBOutlet weak var collectionView: UICollectionView!
     
     let screenSize: CGRect = UIScreen.main.bounds
-
-    var imageArray = [UIImage](repeating: UIImage(), count: 30)
-    var sourceArray = [URL](repeating: URL(string: "https://placehold.it")!,count: 30)
+    
+    var imageArray = [UIImage?](repeating: nil, count: 30)
+    var tasks = [URLSessionDataTask?](repeating: nil, count: 30)
+    var baseUrl = URL(string: "https://placehold.it")!
     
     override func viewDidLoad() {
         
@@ -25,26 +26,6 @@ class ViewController: UIViewController,UICollectionViewDelegate,UICollectionView
         collectionView.delegate = self
         collectionView.prefetchDataSource = self
         
-        
-        for index in 0...4{
-            
-            let baseUrl = sourceArray[index]
-            
-            
-            let url = urlComponents(baseUrl: baseUrl, index: index)
-            
-            
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
-                guard let data = data, error == nil else { return }
-                
-                DispatchQueue.main.async() {
-                    self.imageArray[index] = UIImage(data: data)!
-                    self.collectionView.reloadData()
-                }
-            }
-            task.resume()
-        }
-        
     }
     
     override func didReceiveMemoryWarning() {
@@ -53,7 +34,7 @@ class ViewController: UIViewController,UICollectionViewDelegate,UICollectionView
     }
     
     
-    func urlComponents(baseUrl:URL, index: Int) -> URL {
+    func urlComponents(index: Int) -> URL {
         
         var baseUrlComponents = URLComponents(url: baseUrl, resolvingAgainstBaseURL: true)
         baseUrlComponents?.path = "/\(screenSize.width)x\(screenSize.height * 0.3)"
@@ -67,36 +48,74 @@ class ViewController: UIViewController,UICollectionViewDelegate,UICollectionView
     }
     
     
+    
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        
         let foodCell = collectionView.dequeueReusableCell(withReuseIdentifier: "foodCell", for: indexPath) as! collectionViewCell
         
-        foodCell.foodImage.image = imageArray[indexPath.row]
+        if let img = imageArray[indexPath.row] {
+            foodCell.foodImage.image = img
+        }
+        else {
+            requestImage(forIndex: indexPath)
+        }
         
         return foodCell
     }
     
     
-    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
-        for indexPath in indexPaths{
-            
-            let baseUrl = sourceArray[indexPath.row]
-            let url = urlComponents(baseUrl: baseUrl, index: indexPath.row)
-            
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
-                guard let data = data, error == nil else { return }
-                
-                self.imageArray[indexPath.row] = UIImage(data: data)!
-            }
-            
-            task.resume()
-            
+    
+    
+    func requestImage(forIndex: IndexPath) {
+        var task: URLSessionDataTask
+        
+        if imageArray[forIndex.row] != nil {
+            // Image is already loaded
+            return
         }
+        
+        if tasks[forIndex.row] != nil
+            && tasks[forIndex.row]!.state == URLSessionTask.State.running {
+            // Wait for task to finish
+            return
+        }
+        
+        task = getTask(forIndex: forIndex)
+        tasks[forIndex.row] = task
+        task.resume()
+    }
+    
+    
+    func getTask(forIndex: IndexPath) -> URLSessionDataTask {
+        let imgURL = urlComponents(index: forIndex.row)
+        return URLSession.shared.dataTask(with: imgURL) { data, response, error in
+            guard let data = data, error == nil else { return }
+            
+            DispatchQueue.main.async() {
+                let image = UIImage(data: data)!
+                self.imageArray[forIndex.row] = image
+                self.collectionView.reloadItems(at: [forIndex])
+            }
+        }
+    }
+    
+    
+    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        
+        for indexPath in indexPaths{
+            requestImage(forIndex: indexPath)
+        }
+        
     }
     
     
     func collectionView(_ collectionView: UICollectionView, cancelPrefetchingForItemsAt indexPaths: [IndexPath]) {
         for indexPath in indexPaths{
-            imageArray[indexPath.row] = UIImage()
+            if let task = tasks[indexPath.row] {
+                if task.state != URLSessionTask.State.canceling {
+                    task.cancel()
+                }
+            }
         }
     }
     
@@ -106,6 +125,11 @@ class ViewController: UIViewController,UICollectionViewDelegate,UICollectionView
                         sizeForItemAtIndexPath indexPath: NSIndexPath) -> CGSize{
         return CGSize(width:screenSize.width ,height: screenSize.height * 0.3)
     }
+    
+    
+    
+    
+    
     
 }
 
